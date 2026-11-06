@@ -4,11 +4,20 @@
 set -eo pipefail
 cd "$(dirname "$0")"
 
-[ -f .gitignore ] || printf '.emsdk/\npublic/\n' > .gitignore
+# Make sure build artifacts are never committed (adds missing entries only)
+touch .gitignore
+for entry in ".emsdk/" "public/"; do
+  grep -qxF "$entry" .gitignore || echo "$entry" >> .gitignore
+done
 
 if ! command -v emcc >/dev/null 2>&1; then
   echo "Emscripten not found. Installing it (one-time, takes a few minutes)..."
-  [ -d .emsdk ] || git clone --depth 1 https://github.com/emscripten-core/emsdk.git .emsdk
+  # Check for the emsdk script itself, not just the folder. If .emsdk exists but
+  # is empty or broken (e.g. restored from cache), wipe it and clone again.
+  if [ ! -f .emsdk/emsdk ]; then
+    rm -rf .emsdk
+    git clone --depth 1 https://github.com/emscripten-core/emsdk.git .emsdk
+  fi
   ./.emsdk/emsdk install 3.1.74
   ./.emsdk/emsdk activate 3.1.74
   source ./.emsdk/emsdk_env.sh
