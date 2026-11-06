@@ -27,6 +27,7 @@
       href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <style>
       :root {
         color-scheme: dark;
@@ -632,6 +633,7 @@
         });
         const [key, setKey] = useState("");
         const [touched, setTouched] = useState({});
+        const formRef = useRef();
         const termRef = useRef();
 
         useEffect(() => {
@@ -721,22 +723,96 @@
           await call(() => exec([]), true);
         };
 
+        // Success or failure animation on the Add student card (glow + badge, plus a shake on failure).
+        const fire = (ok) => {
+          const w = formRef.current;
+          if (!w || !window.gsap) return;
+          const glow = ok ? "rgba(52,211,153,.6)" : "rgba(244,63,94,.6)",
+            badge = w.querySelector(ok ? ".fx-ok" : ".fx-err");
+          gsap.killTweensOf([w, badge]);
+          gsap
+            .timeline({
+              onComplete: () =>
+                gsap.set(w, { clearProps: "boxShadow,transform" }),
+            })
+            .fromTo(
+              w,
+              { boxShadow: `0 0 0 0 ${glow}` },
+              {
+                boxShadow: `0 0 46px 4px ${glow}`,
+                duration: 0.3,
+                yoyo: true,
+                repeat: 1,
+                ease: "power2.out",
+              },
+              0,
+            )
+            .fromTo(
+              badge,
+              { opacity: 0, scale: 0.2 },
+              { opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.5)" },
+              0.05,
+            )
+            .to(
+              badge,
+              { opacity: 0, scale: 1.35, duration: 0.35, ease: "power2.in" },
+              0.9,
+            );
+          if (ok)
+            gsap.fromTo(
+              w,
+              { scale: 1 },
+              {
+                scale: 1.025,
+                duration: 0.2,
+                yoyo: true,
+                repeat: 1,
+                ease: "power2.out",
+              },
+            );
+          else {
+            const sh = gsap.timeline();
+            [-10, 10, -8, 8, -4, 0].forEach((x) =>
+              sh.to(w, { x, duration: 0.07, ease: "power1.inOut" }),
+            );
+          }
+        };
+
         const add = async () => {
           const invalid = ["roll", "name", "branch", "cgpa"].filter((k) =>
             RULES[k](f[k], st.records),
           );
           setTouched({ roll: true, name: true, branch: true, cgpa: true });
-          if (invalid.length)
-            return bad("Fix the highlighted fields before adding.");
+          if (invalid.length) {
+            bad("Fix the highlighted fields before adding.");
+            return fire(false);
+          }
           const roll = +f.roll,
             name = f.name.trim().replace(/\s+/g, " "),
             branch = f.branch.trim(),
             cgpa = Number(f.cgpa);
           const r = await run(["1", String(roll), name, branch, String(cgpa)]);
-          if (r && /^Added/.test(r.msg)) {
+          // Success means the new roll is now in the table the program printed.
+          const added = !!(
+            r &&
+            r.state &&
+            r.state.records.some((x) => x.roll === roll)
+          );
+          if (added) {
+            const note = /\[array (?:grew|shrank)[^\]]*\]/.exec(r.msg || "");
             setF({ roll: "", name: "", branch: "", cgpa: "" });
             setTouched({});
+            setMsg({
+              t: "ok",
+              m: `Added ${name} (roll ${roll}).` + (note ? "  " + note[0] : ""),
+            });
+          } else if (r) {
+            setMsg({
+              t: "err",
+              m: "Could not add this student. Check the values and try again.",
+            });
           }
+          fire(added);
         };
         const needRoll = () => {
           const r = rollOf(key);
@@ -837,25 +913,65 @@
 
           <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
             <div className="space-y-5">
-              <${Card} title="Add student">
-                <div className="space-y-2.5">
-                  ${field("roll", "Roll number (1 to 999999)", "numeric", 6)}
-                  ${field("name", "Name (up to 21 characters)", "text", 21)}
-                  ${field("branch", "Branch (up to 9 characters)", "text", 9)}
-                  ${field("cgpa", "CGPA (0 to 10, e.g. 8.75)", "decimal", 5)}
-                  <button
-                    className=${btn + primary}
-                    disabled=${busy}
-                    onClick=${add}
+              <div ref=${formRef} className="relative rounded-2xl">
+                <${Card} title="Add student">
+                  <div className="space-y-2.5">
+                    ${field("roll", "Roll number (1 to 999999)", "numeric", 6)}
+                    ${field("name", "Name (up to 21 characters)", "text", 21)}
+                    ${field("branch", "Branch (up to 9 characters)", "text", 9)}
+                    ${field("cgpa", "CGPA (0 to 10, e.g. 8.75)", "decimal", 5)}
+                    <button
+                      className=${btn + primary}
+                      disabled=${busy}
+                      onClick=${add}
+                    >
+                      Add student
+                    </button>
+                    <p className="text-xs leading-relaxed text-slate-500">
+                      Plain ASCII only. The page reads the C++ table by column,
+                      so longer values would break the layout.
+                    </p>
+                  </div>
+                <//>
+                <div
+                  className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center"
+                >
+                  <div
+                    className="fx-ok flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 opacity-0 shadow-[0_0_44px_rgba(52,211,153,.7)]"
                   >
-                    Add student
-                  </button>
-                  <p className="text-xs leading-relaxed text-slate-500">
-                    Plain ASCII only. The page reads the C++ table by column, so
-                    longer values would break the layout.
-                  </p>
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-10 w-10"
+                      fill="none"
+                      stroke="white"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
                 </div>
-              <//>
+                <div
+                  className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center"
+                >
+                  <div
+                    className="fx-err flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-orange-500 opacity-0 shadow-[0_0_44px_rgba(244,63,94,.7)]"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-10 w-10"
+                      fill="none"
+                      stroke="white"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
               <${Card} title="Find or delete by roll">
                 <input
                   className=${inp + (keyErr ? " !border-rose-500/70" : "")}
