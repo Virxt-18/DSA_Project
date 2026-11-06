@@ -47,6 +47,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
+    <script src="student_db.js"></script>
   </head>
   <body>
     <div id="root"></div>
@@ -60,19 +61,68 @@
         [3, "Branch"],
         [4, "CGPA high to low"],
       ];
-      const bytes = (s) => new TextEncoder().encode(s).length;
+      const okText = (s, max) =>
+        s && s.length <= max && /^[ -~]+$/.test(s) && !s.includes("Choice:");
       const rollOf = (s) => {
         const n = Number(s);
         return s.trim() !== "" && Number.isInteger(n) && n >= 1 && n <= 999999
           ? n
           : null;
       };
-      const api = (url, body) =>
-        fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body || {}),
-        }).then((r) => r.json());
+      const KEY = "student_db_history_v1",
+        MENU = "\n=========== Student Database";
+      const loadHist = () => {
+        try {
+          const h = JSON.parse(localStorage.getItem(KEY) || "[]");
+          return Array.isArray(h) ? h : [];
+        } catch (e) {
+          return [];
+        }
+      };
+      const saveHist = (h) => {
+        try {
+          localStorage.setItem(KEY, JSON.stringify(h));
+        } catch (e) {}
+      };
+      const cut = (s) => {
+        const i = s.lastIndexOf(MENU);
+        return i < 0 ? s : s.slice(0, i);
+      };
+
+      // Runs student_db.cpp (compiled to WebAssembly). Its stdin is the text we feed it; its stdout comes back as lines.
+      // The program prints "Choice: " before reading each menu command, so the text after the j-th "Choice: "
+      // is what command j printed.
+      async function play(cmds) {
+        if (typeof StudentDB !== "function")
+          throw new Error("student_db.js is missing. Run build.sh first.");
+        const input = new TextEncoder().encode(
+          cmds.flat().concat("6").join("\n") + "\n",
+        );
+        let i = 0;
+        const out = [];
+        await StudentDB({
+          stdin: () => (i < input.length ? input[i++] : null),
+          print: (s) => out.push(s),
+          printErr: () => {},
+        });
+        return out.join("\n").split("Choice: ");
+      }
+      // Read the table printed by menu option 6 (Display all).
+      function parse(o) {
+        const records = [];
+        for (const ln of o.split("\n")) {
+          const roll = ln.slice(0, 8).trim();
+          if (!/^\d+$/.test(roll) || ln.length < 41) continue;
+          records.push({
+            roll: +roll,
+            name: ln.slice(8, 30).trim(),
+            branch: ln.slice(30, 40).trim(),
+            cgpa: parseFloat(ln.slice(40)),
+          });
+        }
+        const m = /Records: (\d+)\s+Capacity: (\d+)/.exec(o);
+        return { records, size: m ? +m[1] : 0, capacity: m ? +m[2] : 4 };
+      }
 
       const inp =
         "w-full rounded-md bg-bg border border-line px-2.5 py-1.5 text-sm text-ink outline-none focus:border-sky-500 placeholder:text-mute";
@@ -160,26 +210,54 @@
               m: r.msg,
             });
         };
-        const call = async (url, body, quiet) => {
+        const hist = useRef(loadHist());
+        // Replay every command so far in a fresh copy of the program, then run the new one plus a Display all.
+        const exec = async (lines) => {
+          const cmds = lines.length ? [...hist.current, lines] : hist.current,
+            n = cmds.length;
+          const parts = await play(cmds);
+          if (parts.length < n + 2)
+            throw new Error("the program stopped early");
+          const result = lines.length ? cut(parts[n]).trim() : "";
+          if (lines.length) {
+            hist.current = cmds;
+            saveHist(cmds);
+          }
+          return {
+            state: parse(cut(parts[n + 1])),
+            msg:
+              result
+                .split("\n")
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .pop() || "",
+            transcript: lines.length
+              ? "> " + lines.join("  ⏎  ") + "\n" + result + "\n\n"
+              : "",
+          };
+        };
+        const call = async (fn, quiet) => {
           setBusy(true);
           try {
-            const r = await api(url, body);
+            const r = await fn();
             apply(r, quiet);
             setBusy(false);
             return r;
           } catch (e) {
-            bad("Cannot reach the server. Is node server.js running?");
+            bad("Could not run the program: " + e.message);
             setBusy(false);
           }
         };
-        const run = (lines) => call("/api/cmd", { lines });
+        const run = (lines) => call(() => exec(lines));
         useEffect(() => {
-          call("/api/cmd", { lines: [] }, true);
+          call(() => exec([]), true);
         }, []);
         const restart = async () => {
+          hist.current = [];
+          saveHist([]);
           setTerm("");
           setMsg(null);
-          await call("/api/reset", {}, true);
+          await call(() => exec([]), true);
         };
 
         const add = async () => {
@@ -189,10 +267,10 @@
             cgpa = Number(f.cgpa);
           if (roll === null)
             return bad("Roll must be an integer in [1, 999999].");
-          if (!name || bytes(name) > 21)
-            return bad("Name is required and can be at most 21 bytes.");
-          if (!branch || bytes(branch) > 9)
-            return bad("Branch is required and can be at most 9 bytes.");
+          if (!okText(name, 21))
+            return bad("Name is required: up to 21 plain ASCII characters.");
+          if (!okText(branch, 9))
+            return bad("Branch is required: up to 9 plain ASCII characters.");
           if (f.cgpa.trim() === "" || !(cgpa >= 0 && cgpa <= 10))
             return bad("CGPA must be a number in [0, 10].");
           const r = await run(["1", String(roll), name, branch, String(cgpa)]);
@@ -238,12 +316,13 @@
             <div>
               <h1 className="text-2xl font-semibold">Student Database</h1>
               <p className="mt-1 max-w-2xl text-sm text-mute">
-                Every action runs in the compiled student_db.cpp program. This
-                page only sends menu choices and draws what the program prints.
+                student_db.cpp is compiled to WebAssembly and runs in your
+                browser. This page only sends menu choices and draws what the
+                program prints. Your data stays in this browser.
               </p>
             </div>
             <button className=${btn} disabled=${busy} onClick=${restart}>
-              Restart program
+              Reset database
             </button>
           </header>
 
@@ -252,8 +331,8 @@
               <${Card} title="Add student">
                 <div className="space-y-2">
                   ${field("roll", "Roll number (1 to 999999)", "numeric")}
-                  ${field("name", "Name (up to 21 bytes)")}
-                  ${field("branch", "Branch (up to 9 bytes)")}
+                  ${field("name", "Name (up to 21 characters)")}
+                  ${field("branch", "Branch (up to 9 characters)")}
                   ${field("cgpa", "CGPA (0 to 10)", "decimal")}
                   <button
                     className=${btn +
@@ -264,8 +343,8 @@
                     Add student
                   </button>
                   <p className="text-xs text-mute">
-                    The page reads the C++ table by column, so longer names or
-                    branches would break the layout.
+                    Plain ASCII only. The page reads the C++ table by column, so
+                    longer values would break the layout.
                   </p>
                 </div>
               <//>
@@ -399,7 +478,9 @@
                 </p>
               <//>
 
-              <${Card} title="Program session (real stdin and stdout)">
+              <${Card}
+                title="Program session (inputs sent, then what the program printed)"
+              >
                 <pre
                   ref=${termRef}
                   className="mono max-h-72 overflow-auto whitespace-pre text-xs text-slate-300"
