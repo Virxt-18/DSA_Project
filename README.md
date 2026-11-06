@@ -1,4 +1,9 @@
 # DSA_Project
 
-1. Use `node server.js` in terminal of root dir.
-2. Open localhost website on your browser.
+Team Name - Code Blooded
+Team Details:
+
+- Virat (Leader) | BTECH/15037/25 | AI&ML 3rd Sem.
+- Subhadeep Roy | BTECH/15096/25 | AI&ML 3rd Sem.
+- Pranjal Sharma | BTECH/15063/25 | AI&ML 3rd Sem.
+- Sanidhya Singh | BTECH/15062/25 | AI&ML 3rd Sem.

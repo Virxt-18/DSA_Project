@@ -158,6 +158,78 @@
         </div>`;
       };
 
+      const TEAM = [
+        ["Virat", true, "BTECH/15037/25", "AI&ML 3rd Sem."],
+        ["Subhadeep Roy", false, "BTECH/15096/25", "AI&ML 3rd Sem."],
+        ["Pranjal Sharma", false, "BTECH/15063/25", "AI&ML 3rd Sem."],
+        ["Sanidhya Singh", false, "BTECH/15062/25", "AI&ML 3rd Sem."],
+      ];
+
+      function Footer() {
+        const [open, setOpen] = useState(false);
+        useEffect(() => {
+          if (!open) return;
+          const onKey = (e) => e.key === "Escape" && setOpen(false);
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        }, [open]);
+
+        return html`<footer
+          className="border-t border-line pb-2 pt-5 text-center text-sm text-mute"
+        >
+          <p>
+            Made with ❤️ by${" "}
+            <button
+              className="font-semibold text-ink underline decoration-dotted underline-offset-4 transition-colors hover:text-sky-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+              aria-expanded=${open}
+              aria-controls="team-panel"
+              onClick=${() => setOpen(!open)}
+            >
+              Code Blooded
+            </button>
+          </p>
+          ${open &&
+          html`<div
+            id="team-panel"
+            className="mx-auto mt-4 max-w-xl rounded-xl border border-line bg-panel p-4 text-left"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-ink">
+                Team Code Blooded
+              </h2>
+              <button
+                className="rounded px-1.5 text-xs text-mute hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+                aria-label="Close team list"
+                onClick=${() => setOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <ul className="divide-y divide-line">
+              ${TEAM.map(
+                ([name, leader, id, sem]) =>
+                  html`<li
+                    key=${id}
+                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5 py-2"
+                  >
+                    <span className="text-ink">
+                      ${name}
+                      ${leader &&
+                      html`<span
+                        className="ml-2 rounded-full border border-sky-500/50 px-2 py-0.5 text-[11px] text-sky-300"
+                        >Leader</span
+                      >`}
+                    </span>
+                    <span className="mono text-xs text-mute"
+                      >${id} · ${sem}</span
+                    >
+                  </li>`,
+              )}
+            </ul>
+          </div>`}
+        </footer>`;
+      }
+
       function App() {
         const [st, setSt] = useState({ records: [], size: 0, capacity: 4 });
         const [term, setTerm] = useState("");
@@ -490,6 +562,7 @@ ${term || "Waiting for the program..."}</pre
               <//>
             </div>
           </div>
+          <${Footer} />
         </div>`;
       }
       ReactDOM.createRoot(document.getElementById("root")).render(
